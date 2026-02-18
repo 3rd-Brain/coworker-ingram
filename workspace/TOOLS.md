@@ -140,6 +140,35 @@ write_file(
 )
 ```
 
+## Browser (Playwright MCP)
+
+You have a headless Chromium browser via Playwright MCP. Tools are prefixed `mcp_playwright_*` and auto-registered at startup.
+
+### When to use the browser
+
+- Reading pages that require JavaScript rendering (SPAs, dashboards)
+- Extracting structured data from sites that `web_fetch` can't handle well
+- Filling forms, clicking through multi-step flows
+- Taking screenshots for visual verification
+- Authenticated browsing when credentials are provided
+
+### Key tools
+
+| Tool | What it does |
+| ---- | ------------ |
+| `mcp_playwright_browser_navigate` | Go to a URL |
+| `mcp_playwright_browser_screenshot` | Capture the current page |
+| `mcp_playwright_browser_click` | Click an element |
+| `mcp_playwright_browser_fill` | Type into an input field |
+| `mcp_playwright_browser_select` | Select from a dropdown |
+| `mcp_playwright_browser_evaluate` | Run JavaScript on the page |
+
+### Tips
+
+- Try `web_fetch` first for simple page reads — it's faster and cheaper. Use the browser when you need interactivity or JS rendering.
+- The browser runs headless (no visible window). Use screenshots to see what's on screen.
+- Pages load in a single shared browser context. Navigate away when done to free memory.
+
 ---
 
 ## Adding Custom Tools

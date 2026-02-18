@@ -22,7 +22,7 @@
       "mode": "socket",
       "botToken": "${SLACK_BOT_TOKEN}",
       "appToken": "${SLACK_APP_TOKEN}",
-      "replyInThread": true,
+      "replyInThread": false,
       "reactEmoji": "eyes",
       "groupPolicy": "open",
       "dm": {

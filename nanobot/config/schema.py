@@ -187,6 +187,7 @@ class AgentDefaults(Base):
     temperature: float = 0.7
     max_tool_iterations: int = 20
     memory_window: int = 50
+    show_progress: bool = True  # Send intermediate tool-call hints to the chat channel
 
 
 class AgentsConfig(Base):

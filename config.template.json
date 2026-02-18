@@ -1,0 +1,52 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.nanobot/workspace",
+      "model": "anthropic/claude-sonnet-4-5",
+      "maxTokens": 8192,
+      "temperature": 1,
+      "maxToolIterations": 20,
+      "memoryWindow": 50
+    }
+  },
+
+  "providers": {
+    "anthropic": {
+      "apiKey": "${ANTHROPIC_API_KEY}"
+    }
+  },
+
+  "channels": {
+    "slack": {
+      "enabled": true,
+      "mode": "socket",
+      "botToken": "${SLACK_BOT_TOKEN}",
+      "appToken": "${SLACK_APP_TOKEN}",
+      "replyInThread": true,
+      "reactEmoji": "eyes",
+      "groupPolicy": "open",
+      "dm": {
+        "enabled": true,
+        "policy": "open"
+      }
+    }
+  },
+
+  "tools": {
+    "web": {
+      "search": {
+        "apiKey": "${BRAVE_SEARCH_API_KEY}"
+      }
+    },
+    "exec": {
+      "timeout": 60
+    },
+    "restrictToWorkspace": true,
+    "mcpServers": {
+      "playwright": {
+        "command": "npx",
+        "args": ["@playwright/mcp@latest", "--headless", "--no-sandbox"]
+      }
+    }
+  }
+}

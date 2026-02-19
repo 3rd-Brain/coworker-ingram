@@ -140,6 +140,29 @@ write_file(
 )
 ```
 
+## Git & GitHub
+
+You have a GitHub Personal Access Token available as `$GITHUB_PAT` in your environment. Use it for all git operations with private repos.
+
+### Cloning a private repo
+```bash
+git clone https://$GITHUB_PAT@github.com/3rd-Brain/repo-name.git
+```
+
+### Pulling / pushing
+```bash
+git pull origin main
+git add . && git commit -m "message" && git push origin main
+```
+
+### Key repos you have access to
+- **secondbrain-coworkspace** — shared team workspace (`https://github.com/3rd-Brain/secondbrain-coworkspace`). Your local copy should live at `~/secondbrain-coworkspace/` or within your workspace. Keep it synced.
+
+### Rules
+- **Try first, ask second.** If a repo URL is in your files or env, attempt to clone/pull it before telling a user you can't access it.
+- Push important work product to the shared repo. Don't wait to be asked.
+- Commit messages should be clear and concise. No "update files" — say what changed and why.
+
 ## Browser (Playwright MCP)
 
 You have a headless Chromium browser via Playwright MCP. Tools are prefixed `mcp_playwright_*` and auto-registered at startup.

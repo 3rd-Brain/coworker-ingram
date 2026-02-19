@@ -2,8 +2,11 @@
 
 import asyncio
 import re
+import time
+from pathlib import Path
 from typing import Any
 
+import httpx
 from loguru import logger
 from slack_sdk.socket_mode.websockets import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
@@ -17,6 +20,9 @@ from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import SlackConfig
 
+_USER_CACHE_TTL = 3600  # 1 hour
+_MAX_FILE_BYTES = 20 * 1024 * 1024  # 20 MB
+
 
 class SlackChannel(BaseChannel):
     """Slack channel using Socket Mode."""
@@ -29,6 +35,7 @@ class SlackChannel(BaseChannel):
         self._web_client: AsyncWebClient | None = None
         self._socket_client: SocketModeClient | None = None
         self._bot_user_id: str | None = None
+        self._user_name_cache: dict[str, tuple[str, float]] = {}  # user_id -> (name, fetched_at)
 
     async def start(self) -> None:
         """Start the Slack Socket Mode client."""
@@ -117,8 +124,9 @@ class SlackChannel(BaseChannel):
         sender_id = event.get("user")
         chat_id = event.get("channel")
 
-        # Ignore bot/system messages (any subtype = not a normal user message)
-        if event.get("subtype"):
+        # Ignore bot/system messages; allow file_share subtype through
+        subtype = event.get("subtype")
+        if subtype and subtype != "file_share":
             return
         if self._bot_user_id and sender_id == self._bot_user_id:
             return
@@ -152,6 +160,18 @@ class SlackChannel(BaseChannel):
 
         text = self._strip_bot_mention(text)
 
+        # Resolve sender display name
+        display_name = await self._resolve_user_name(sender_id)
+        text = f"[{display_name}] {text}"
+
+        # Process file attachments
+        media_paths: list[str] = []
+        files = event.get("files", [])
+        if files:
+            media_paths, file_parts = await self._process_files(files)
+            if file_parts:
+                text = text + "\n" + "\n".join(file_parts)
+
         thread_ts = event.get("thread_ts")
         if self.config.reply_in_thread and not thread_ts:
             thread_ts = event.get("ts")
@@ -170,6 +190,7 @@ class SlackChannel(BaseChannel):
             sender_id=sender_id,
             chat_id=chat_id,
             content=text,
+            media=media_paths if media_paths else None,
             metadata={
                 "slack": {
                     "event": event,
@@ -178,6 +199,98 @@ class SlackChannel(BaseChannel):
                 }
             },
         )
+
+    async def _resolve_user_name(self, user_id: str) -> str:
+        """Resolve a Slack user ID to a display name, with caching."""
+        now = time.monotonic()
+        cached = self._user_name_cache.get(user_id)
+        if cached and (now - cached[1]) < _USER_CACHE_TTL:
+            return cached[0]
+
+        if not self._web_client:
+            return user_id
+
+        try:
+            resp = await self._web_client.users_info(user=user_id)
+            user = resp.get("user", {})
+            profile = user.get("profile", {})
+            name = (
+                profile.get("display_name")
+                or profile.get("real_name")
+                or user.get("real_name")
+                or user.get("name")
+                or user_id
+            )
+            self._user_name_cache[user_id] = (name, now)
+            return name
+        except Exception as e:
+            logger.debug(f"Failed to resolve Slack user {user_id}: {e}")
+            return user_id
+
+    async def _process_files(self, files: list[dict]) -> tuple[list[str], list[str]]:
+        """Process Slack file attachments.
+
+        Returns:
+            Tuple of (media_paths for images, content_parts for text descriptions).
+        """
+        media_paths: list[str] = []
+        content_parts: list[str] = []
+
+        if not self._web_client or not files:
+            return media_paths, content_parts
+
+        media_dir = Path.home() / ".nanobot" / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
+
+        for f in files:
+            name = f.get("name", "file")
+            mimetype = f.get("mimetype", "")
+            size = f.get("size", 0)
+            url = f.get("url_private_download")
+            file_id = f.get("id", "file")
+
+            if not url:
+                content_parts.append(f"[file: {name} — no download URL]")
+                continue
+
+            if size and size > _MAX_FILE_BYTES:
+                content_parts.append(f"[file: {name} ({self._human_size(size)}) — too large]")
+                continue
+
+            is_image = mimetype.startswith("image/")
+
+            if is_image:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(
+                            url,
+                            headers={"Authorization": f"Bearer {self.config.bot_token}"},
+                            follow_redirects=True,
+                        )
+                        resp.raise_for_status()
+
+                    ext = Path(name).suffix or ".jpg"
+                    file_path = media_dir / f"{file_id}{ext}"
+                    file_path.write_bytes(resp.content)
+                    media_paths.append(str(file_path))
+                    content_parts.append(f"[image: {name}]")
+                except Exception as e:
+                    logger.warning(f"Failed to download Slack image {name}: {e}")
+                    content_parts.append(f"[image: {name} — download failed]")
+            else:
+                size_str = f" ({self._human_size(size)})" if size else ""
+                content_parts.append(f"[file: {name}{size_str}, type: {mimetype}]")
+
+        return media_paths, content_parts
+
+    @staticmethod
+    def _human_size(nbytes: int) -> str:
+        """Format bytes as human-readable string."""
+        for unit in ("B", "KB", "MB", "GB"):
+            if nbytes < 1024:
+                return f"{nbytes:.0f}{unit}"
+            nbytes /= 1024
+        return f"{nbytes:.0f}TB"
 
     def _is_allowed(self, sender_id: str, chat_id: str, channel_type: str) -> bool:
         if channel_type == "im":

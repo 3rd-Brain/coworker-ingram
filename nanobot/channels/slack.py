@@ -259,27 +259,31 @@ class SlackChannel(BaseChannel):
 
             is_image = mimetype.startswith("image/")
 
-            if is_image:
-                try:
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.get(
-                            url,
-                            headers={"Authorization": f"Bearer {self.config.bot_token}"},
-                            follow_redirects=True,
-                        )
-                        resp.raise_for_status()
+            # Download all files (images go through media pipeline, others get a local path)
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        url,
+                        headers={"Authorization": f"Bearer {self.config.bot_token}"},
+                        follow_redirects=True,
+                    )
+                    resp.raise_for_status()
 
-                    ext = Path(name).suffix or ".jpg"
-                    file_path = media_dir / f"{file_id}{ext}"
-                    file_path.write_bytes(resp.content)
+                ext = Path(name).suffix or (".jpg" if is_image else "")
+                file_path = media_dir / f"{file_id}{ext}"
+                file_path.write_bytes(resp.content)
+
+                if is_image:
                     media_paths.append(str(file_path))
                     content_parts.append(f"[image: {name}]")
-                except Exception as e:
-                    logger.warning(f"Failed to download Slack image {name}: {e}")
-                    content_parts.append(f"[image: {name} — download failed]")
-            else:
-                size_str = f" ({self._human_size(size)})" if size else ""
-                content_parts.append(f"[file: {name}{size_str}, type: {mimetype}]")
+                else:
+                    size_str = f" ({self._human_size(size)})" if size else ""
+                    content_parts.append(
+                        f"[file: {name}{size_str}, type: {mimetype}, saved to: {file_path}]"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to download Slack file {name}: {e}")
+                content_parts.append(f"[file: {name} — download failed]")
 
         return media_paths, content_parts
 
